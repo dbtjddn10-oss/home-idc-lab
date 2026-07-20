@@ -1,3 +1,358 @@
+# Day 3 - SSH 원격 접속 및 UFW 방화벽 설정
+
+## 1. 실습 목표
+
+- Windows에서 Ubuntu Server에 SSH로 원격 접속
+- VirtualBox의 SSH 포트 포워딩 설정
+- UFW 방화벽 활성화
+- SSH와 HTTP에 필요한 포트만 허용
+- Linux 서버의 CPU 및 메모리 상태 확인
+
+---
+
+## 2. SSH란?
+
+SSH는 `Secure Shell`의 약자로, 다른 컴퓨터에서 Linux 서버에 안전하게 접속해 명령어를 실행할 수 있게 해주는 방식이다.
+
+이번 실습에서는 Ubuntu 가상머신 화면을 직접 조작하지 않고, Windows PowerShell에서 Ubuntu 서버에 접속했다.
+
+```text
+Windows PowerShell
+        ↓
+SSH 연결
+        ↓
+VirtualBox 포트 포워딩
+        ↓
+Ubuntu Server
+```
+
+---
+
+## 3. VirtualBox SSH 포트 포워딩 설정
+
+Ubuntu 가상머신은 NAT 네트워크를 사용하고 있기 때문에 Windows에서 직접 `10.0.2.15`의 22번 포트로 접속하면 연결 시간이 초과되었다.
+
+```text
+Connection timed out
+```
+
+이 문제를 해결하기 위해 VirtualBox에 SSH용 포트 포워딩 규칙을 추가했다.
+
+설정 경로:
+
+```text
+VirtualBox
+→ home-idc-ubuntu 선택
+→ 설정
+→ 네트워크
+→ 어댑터 1
+→ 고급
+→ 포트 포워딩
+```
+
+추가한 규칙:
+
+| 설정 | 값 |
+|---|---|
+| 이름 | ssh |
+| 프로토콜 | TCP |
+| 호스트 IP | 127.0.0.1 |
+| 호스트 포트 | 2222 |
+| 게스트 IP | 공란 또는 10.0.2.15 |
+| 게스트 포트 | 22 |
+
+### 포트 포워딩 의미
+
+Windows의 `2222` 포트로 들어온 요청을 Ubuntu 서버의 SSH 포트인 `22`번으로 전달한다.
+
+```text
+Windows 127.0.0.1:2222
+        ↓
+VirtualBox 포트 포워딩
+        ↓
+Ubuntu Server 10.0.2.15:22
+```
+
+---
+
+## 4. Windows PowerShell에서 SSH 접속
+
+Windows PowerShell을 실행하고 다음 명령어로 Ubuntu 서버에 접속했다.
+
+```powershell
+ssh -p 2222 sungwoo@127.0.0.1
+```
+
+각 항목의 의미:
+
+- `ssh`: SSH 원격 접속 명령어
+- `-p 2222`: Windows에서 접속할 포트 번호
+- `sungwoo`: Ubuntu 사용자 이름
+- `127.0.0.1`: 현재 Windows PC를 가리키는 주소
+
+최초 접속 시 서버를 신뢰할 것인지 묻는 메시지가 표시됐다.
+
+```text
+Are you sure you want to continue connecting?
+```
+
+다음과 같이 입력했다.
+
+```text
+yes
+```
+
+Ubuntu 계정 비밀번호를 입력한 후 다음과 같은 프롬프트가 표시되어 원격 접속에 성공했다.
+
+```text
+sungwoo@home-idc-ubuntu
+```
+
+---
+
+## 5. SSH 접속 후 서버 IP 확인
+
+원격 접속한 PowerShell에서 다음 명령어를 실행했다.
+
+```bash
+hostname -I
+```
+
+출력된 Ubuntu 가상머신 IP 주소:
+
+```text
+10.0.2.15
+```
+
+이를 통해 Windows PowerShell에서 실제 Ubuntu 서버에 접속해 명령어를 실행하고 있음을 확인했다.
+
+---
+
+## 6. UFW 방화벽 상태 확인
+
+Ubuntu의 방화벽 상태를 확인했다.
+
+```bash
+sudo ufw status
+```
+
+출력 결과:
+
+```text
+Status: inactive
+```
+
+`inactive`는 UFW 방화벽이 아직 활성화되지 않았다는 뜻이다.
+
+---
+
+## 7. SSH 포트 허용
+
+방화벽을 활성화하기 전에 원격 접속에 사용하는 SSH 포트를 먼저 허용했다.
+
+```bash
+sudo ufw allow 22/tcp
+```
+
+SSH는 기본적으로 TCP 22번 포트를 사용한다.
+
+SSH 포트를 허용하지 않고 방화벽부터 활성화하면 원격 접속이 차단될 수 있으므로, 먼저 SSH 규칙을 추가하는 것이 중요하다.
+
+---
+
+## 8. HTTP 웹 서버 포트 허용
+
+Nginx 웹 서버 접속에 필요한 HTTP 80번 포트를 허용했다.
+
+```bash
+sudo ufw allow 80/tcp
+```
+
+HTTP 웹 서비스는 기본적으로 TCP 80번 포트를 사용한다.
+
+---
+
+## 9. UFW 방화벽 활성화
+
+필요한 포트를 허용한 후 UFW 방화벽을 활성화했다.
+
+```bash
+sudo ufw enable
+```
+
+출력 결과:
+
+```text
+Firewall is active and enabled on system startup
+```
+
+이는 방화벽이 즉시 활성화되었으며 Ubuntu 서버를 재부팅해도 자동으로 실행된다는 뜻이다.
+
+---
+
+## 10. 방화벽 규칙 확인
+
+현재 적용된 방화벽 규칙을 번호와 함께 확인했다.
+
+```bash
+sudo ufw status numbered
+```
+
+확인된 규칙:
+
+```text
+22/tcp
+80/tcp
+22/tcp (v6)
+80/tcp (v6)
+```
+
+IPv4와 IPv6 규칙이 각각 표시되므로 총 네 개의 규칙이 나타나는 것은 정상이다.
+
+현재 서버에서 허용한 주요 포트:
+
+| 포트 | 용도 |
+|---|---|
+| TCP 22 | SSH 원격 접속 |
+| TCP 80 | Nginx HTTP 웹 서비스 |
+
+---
+
+## 11. 서버 CPU 및 프로세스 상태 확인
+
+다음 명령어를 실행해 CPU 사용률, 메모리 사용량, 실행 중인 프로세스를 실시간으로 확인했다.
+
+```bash
+top
+```
+
+`top` 화면에서는 다음 정보를 확인할 수 있다.
+
+- CPU 사용률
+- 메모리 사용량
+- 시스템 실행 시간
+- 실행 중인 프로세스
+- 프로세스별 자원 사용량
+
+`top` 화면을 종료할 때는 다음 키를 사용했다.
+
+```text
+q
+```
+
+---
+
+## 12. 서버 메모리 상태 확인
+
+다음 명령어로 서버의 메모리 사용 상태를 확인했다.
+
+```bash
+free -h
+```
+
+`-h` 옵션은 메모리 용량을 사람이 읽기 쉬운 MB 또는 GB 단위로 표시한다.
+
+주요 항목:
+
+| 항목 | 의미 |
+|---|---|
+| total | 전체 메모리 용량 |
+| used | 현재 사용 중인 메모리 |
+| free | 사용하지 않는 메모리 |
+| available | 새 프로그램이 사용할 수 있는 메모리 |
+| swap | 메모리가 부족할 때 디스크를 대신 사용하는 공간 |
+
+---
+
+## 13. 오늘 배운 내용
+
+- SSH를 사용하면 다른 컴퓨터에서 Linux 서버를 원격으로 관리할 수 있다.
+- VirtualBox NAT 환경에서는 포트 포워딩을 이용해 SSH에 접속할 수 있다.
+- Ubuntu SSH의 기본 포트는 TCP 22번이다.
+- Nginx HTTP 웹 서비스의 기본 포트는 TCP 80번이다.
+- UFW는 Ubuntu에서 사용하는 방화벽 관리 도구다.
+- 방화벽을 켜기 전에 SSH 포트를 먼저 허용해야 원격 접속이 끊기지 않는다.
+- 방화벽에서는 서비스 운영에 필요한 포트만 허용하는 것이 안전하다.
+- `top` 명령어로 CPU와 프로세스를 실시간으로 확인할 수 있다.
+- `free -h` 명령어로 메모리와 Swap 사용량을 확인할 수 있다.
+
+---
+
+## 14. 문제 해결 기록
+
+### 문제 1: SSH 연결 시간 초과
+
+처음에는 Windows PowerShell에서 다음과 같이 가상머신 IP로 직접 접속했다.
+
+```powershell
+ssh sungwoo@10.0.2.15
+```
+
+그러나 다음 오류가 발생했다.
+
+```text
+Connection timed out
+```
+
+### 원인
+
+VirtualBox 가상머신이 NAT 네트워크를 사용하고 있어 Windows 호스트에서 가상머신의 22번 포트로 직접 접속할 수 없었다.
+
+### 해결
+
+VirtualBox에서 호스트 포트 `2222`를 게스트 포트 `22`로 전달하는 포트 포워딩 규칙을 만들었다.
+
+그 후 다음 명령어로 접속했다.
+
+```powershell
+ssh -p 2222 sungwoo@127.0.0.1
+```
+
+SSH 원격 접속에 정상적으로 성공했다.
+
+---
+
+### 문제 2: UFW 상태를 Active로 잘못 확인
+
+처음에는 UFW 상태 출력의 `inactive`를 `active`로 잘못 읽었다.
+
+다시 확인한 결과 방화벽이 비활성화된 상태임을 확인했다.
+
+```bash
+sudo ufw status
+```
+
+이후 SSH와 HTTP 포트를 허용하고 방화벽을 활성화했다.
+
+---
+
+## 15. 보안상 주의할 점
+
+GitHub 공개 저장소에는 다음 정보를 올리지 않는다.
+
+- Ubuntu 로그인 비밀번호
+- SSH 개인 키
+- AWS Access Key
+- AWS Secret Access Key
+- 실제 회사 서버 IP
+- 개인정보 및 인증 정보
+
+이번 프로젝트의 `10.0.2.15`와 `127.0.0.1`은 개인 실습 환경의 로컬 주소이므로 공개해도 외부에서 직접 접속할 수 없다.
+
+---
+
+## 16. 다음 실습 계획
+
+- Linux 파일 및 디렉터리 권한 실습
+- Nginx 접속 로그와 오류 로그 확인
+- 웹 서버를 일부러 중지하고 장애 원인 확인
+- Nginx 서비스 재시작 및 복구
+- Bash 기반 서버 상태 점검 스크립트 작성
+- Cron을 이용한 자동 실행 설정
+
+---
+
+
 ## DAY 2 
 # Day 2 - Nginx 기본 웹페이지 수정
 
