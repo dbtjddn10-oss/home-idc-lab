@@ -1,3 +1,650 @@
+# Day 6 - Docker Nginx 컨테이너 구축 및 장애 복구
+
+## 1. 실습 목표
+
+- Docker 컨테이너에서 Nginx 실행
+- 호스트 포트와 컨테이너 포트 연결
+- Ubuntu에 직접 설치한 Nginx와 Docker Nginx 비교
+- Docker 컨테이너 내부 구조 확인
+- 컨테이너 웹페이지 수정
+- Docker 로그 실시간 확인
+- 컨테이너 중지 및 서비스 복구
+- 컨테이너 자동 재시작 정책 설정
+
+---
+
+## 2. Docker Nginx 컨테이너 실행
+
+Docker Hub의 공식 Nginx 이미지를 사용해 컨테이너를 실행했다.
+
+```bash
+sudo docker run -d -p 8080:80 nginx
+```
+
+### 명령어 의미
+
+- `docker run`: 새로운 컨테이너 생성 및 실행
+- `-d`: 컨테이너를 백그라운드에서 실행
+- `-p 8080:80`: Ubuntu 서버의 8080번 포트를 컨테이너의 80번 포트에 연결
+- `nginx`: 사용할 Docker 이미지 이름
+
+포트 연결 구조:
+
+```text
+Ubuntu Server 8080
+        ↓
+Docker 포트 매핑
+        ↓
+Nginx 컨테이너 80
+```
+
+---
+
+## 3. VirtualBox 포트 포워딩 추가
+
+Windows 브라우저에서 Docker Nginx에 접속하기 위해 VirtualBox 포트 포워딩 규칙을 추가했다.
+
+설정 경로:
+
+```text
+VirtualBox
+→ home-idc-ubuntu
+→ 설정
+→ 네트워크
+→ 어댑터 1
+→ 고급
+→ 포트 포워딩
+```
+
+추가한 규칙:
+
+| 설정 | 값 |
+|---|---|
+| 이름 | docker-nginx |
+| 프로토콜 | TCP |
+| 호스트 IP | 127.0.0.1 |
+| 호스트 포트 | 8081 |
+| 게스트 IP | 공란 또는 10.0.2.15 |
+| 게스트 포트 | 8080 |
+
+전체 요청 흐름:
+
+```text
+Windows 브라우저
+127.0.0.1:8081
+        ↓
+VirtualBox 포트 포워딩
+        ↓
+Ubuntu Server:8080
+        ↓
+Docker 포트 매핑
+        ↓
+Nginx 컨테이너:80
+```
+
+---
+
+## 4. Docker Nginx 접속 확인
+
+Windows 브라우저에서 다음 주소에 접속했다.
+
+```text
+http://127.0.0.1:8081
+```
+
+다음 기본 페이지가 표시되어 Docker Nginx가 정상적으로 실행되는 것을 확인했다.
+
+```text
+Welcome to nginx!
+```
+
+Ubuntu 서버 내부에서도 다음 명령어로 응답을 확인했다.
+
+```bash
+curl localhost:8080
+```
+
+Nginx 기본 HTML 코드가 출력되어 Ubuntu 서버와 컨테이너 사이의 포트 연결이 정상임을 확인했다.
+
+---
+
+## 5. 기존 Nginx와 Docker Nginx 비교
+
+이번 실습 환경에는 서로 분리된 두 개의 Nginx가 실행되고 있다.
+
+| 브라우저 주소 | 실행 위치 | 표시되는 페이지 |
+|---|---|---|
+| `127.0.0.1:8080` | Ubuntu에 직접 설치한 Nginx | Home IDC Lab Day 2 |
+| `127.0.0.1:8081` | Docker 컨테이너의 Nginx | Docker Nginx 페이지 |
+
+두 Nginx는 서로 다른 파일과 설정을 사용한다.
+
+```text
+Ubuntu 직접 설치 Nginx
+→ /var/www/html
+
+Docker Nginx
+→ /usr/share/nginx/html
+```
+
+Docker를 사용하면 여러 서비스를 서로 분리해서 실행할 수 있고, 컨테이너 단위로 생성·중지·삭제·복구할 수 있다.
+
+---
+
+## 6. 실행 중인 컨테이너 확인
+
+다음 명령어로 실행 중인 컨테이너를 확인했다.
+
+```bash
+sudo docker ps
+```
+
+실행 중인 Nginx 컨테이너의 자동 생성 이름은 다음과 같았다.
+
+```text
+nice_keller
+```
+
+컨테이너가 실행 중일 때 상태는 다음과 같이 표시된다.
+
+```text
+Up
+```
+
+종료된 컨테이너까지 모두 확인하려면 다음 명령어를 사용한다.
+
+```bash
+sudo docker ps -a
+```
+
+---
+
+## 7. Nginx 컨테이너 내부 접속
+
+실행 중인 Nginx 컨테이너 내부에 Bash 셸로 접속했다.
+
+```bash
+sudo docker exec -it nice_keller bash
+```
+
+### 명령어 의미
+
+- `docker exec`: 실행 중인 컨테이너 안에서 명령 실행
+- `-it`: 터미널을 통해 대화형으로 작업
+- `nice_keller`: 컨테이너 이름
+- `bash`: 컨테이너 내부에서 실행할 셸
+
+접속에 성공하면 프롬프트가 다음과 같은 형태로 변경된다.
+
+```text
+root@컨테이너ID:/#
+```
+
+이 상태는 Ubuntu 호스트가 아니라 Docker 컨테이너 내부에서 명령을 실행하고 있다는 뜻이다.
+
+---
+
+## 8. 컨테이너 Nginx 설정 검사
+
+컨테이너 내부에서 Nginx 설정 문법을 검사했다.
+
+```bash
+nginx -t
+```
+
+다음과 같은 메시지가 나타나 설정에 문법 오류가 없음을 확인했다.
+
+```text
+syntax is ok
+test is successful
+```
+
+Docker 컨테이너에는 일반적으로 `systemd`가 실행되지 않기 때문에 다음 명령어는 사용할 수 없었다.
+
+```bash
+systemctl reload nginx
+```
+
+대신 다음 명령어로 Nginx 설정을 다시 불러왔다.
+
+```bash
+nginx -s reload
+```
+
+출력된 메시지:
+
+```text
+signal process started
+```
+
+이는 Nginx 프로세스가 설정 재적용 신호를 정상적으로 받았다는 뜻이다.
+
+---
+
+## 9. Nginx 설정 파일 구조 확인
+
+Nginx 메인 설정 파일을 확인했다.
+
+```bash
+cat /etc/nginx/nginx.conf
+```
+
+설정 파일에서 다음 `include` 항목을 확인했다.
+
+```nginx
+include /etc/nginx/conf.d/*.conf;
+```
+
+이는 Nginx가 `/etc/nginx/conf.d` 디렉터리 안의 `.conf` 설정 파일을 추가로 읽는다는 뜻이다.
+
+기본 서버 설정 파일도 확인했다.
+
+```bash
+cat /etc/nginx/conf.d/default.conf
+```
+
+주요 설정:
+
+```nginx
+listen 80;
+root /usr/share/nginx/html;
+```
+
+설정 의미:
+
+- `listen 80`: 컨테이너의 80번 포트에서 HTTP 요청 대기
+- `root /usr/share/nginx/html`: 해당 디렉터리에서 웹페이지 파일 제공
+
+따라서 Docker Nginx의 기본 웹페이지 파일은 다음 위치에 있다.
+
+```text
+/usr/share/nginx/html/index.html
+```
+
+---
+
+## 10. Docker Nginx 웹페이지 수정
+
+Nginx 공식 이미지에는 `vi`나 `nano` 편집기가 설치되어 있지 않아 다음 오류가 발생했다.
+
+```text
+vi: command not found
+```
+
+따라서 `echo`와 출력 리다이렉션을 이용해 HTML 파일을 수정했다.
+
+```bash
+echo '<h1>Welcome to IDC Lab Day 7</h1>' > /usr/share/nginx/html/index.html
+```
+
+### `>` 기호의 의미
+
+`>`는 명령어의 출력 내용을 파일에 저장하며 기존 내용을 덮어쓴다.
+
+```text
+echo로 생성한 HTML
+        ↓
+>
+        ↓
+index.html에 저장
+```
+
+수정된 파일 내용을 확인했다.
+
+```bash
+cat /usr/share/nginx/html/index.html
+```
+
+출력 결과:
+
+```html
+<h1>Welcome to IDC Lab Day 7</h1>
+```
+
+브라우저에서 다음 주소를 새로고침했다.
+
+```text
+http://127.0.0.1:8081
+```
+
+변경된 문구가 정상적으로 표시됐다.
+
+정적 HTML 파일 변경은 Nginx 설정 변경이 아니므로 일반적으로 Nginx를 재시작하거나 리로드하지 않아도 바로 반영된다.
+
+---
+
+## 11. 컨테이너에서 나오기
+
+컨테이너 내부 작업을 마치고 Ubuntu 호스트로 돌아왔다.
+
+```bash
+exit
+```
+
+프롬프트가 다음 형태로 돌아와 컨테이너에서 정상적으로 빠져나온 것을 확인했다.
+
+```text
+sungwoo@home-idc-ubuntu
+```
+
+---
+
+## 12. Docker Nginx 로그 구조 확인
+
+컨테이너 내부에서 Nginx 로그 경로를 확인했다.
+
+```bash
+ls -l /var/log/nginx
+```
+
+확인 결과:
+
+```text
+access.log -> /dev/stdout
+error.log  -> /dev/stderr
+```
+
+Docker Nginx는 로그를 일반 파일에 저장하는 대신 다음 표준 출력으로 전달한다.
+
+- `stdout`: 일반 접속 로그
+- `stderr`: 오류 로그
+
+이 방식은 Docker 환경에서 일반적으로 사용되며, 호스트에서 `docker logs` 명령어로 로그를 확인할 수 있다.
+
+---
+
+## 13. 컨테이너 로그 실시간 확인
+
+Ubuntu 호스트에서 다음 명령어를 실행했다.
+
+```bash
+sudo docker logs -f nice_keller
+```
+
+### 명령어 의미
+
+- `docker logs`: 컨테이너 로그 확인
+- `-f`: 새로운 로그를 실시간으로 계속 출력
+- `nice_keller`: 로그를 확인할 컨테이너 이름
+
+브라우저에서 다음 주소를 새로고침했다.
+
+```text
+http://127.0.0.1:8081
+```
+
+새로고침할 때마다 Docker 터미널에 Nginx 접속 로그가 실시간으로 출력되는 것을 확인했다.
+
+실시간 로그 확인을 종료할 때는 다음 키를 사용했다.
+
+```text
+Ctrl + C
+```
+
+---
+
+## 14. 컨테이너 이름 오타 문제 해결
+
+처음에는 컨테이너 이름을 다음과 같이 잘못 입력했다.
+
+```text
+nice_kellar
+```
+
+그 결과 다음 오류가 발생했다.
+
+```text
+Error response from daemon:
+No such container: nice_kellar
+```
+
+다음 명령어로 실제 컨테이너 이름을 다시 확인했다.
+
+```bash
+sudo docker ps -a
+```
+
+정확한 컨테이너 이름:
+
+```text
+nice_keller
+```
+
+정확한 이름을 사용한 후 로그 확인에 성공했다.
+
+```bash
+sudo docker logs -f nice_keller
+```
+
+---
+
+## 15. Docker 컨테이너 장애 재현
+
+컨테이너 장애 상황을 재현하기 위해 실행 중인 Nginx 컨테이너를 중지했다.
+
+```bash
+sudo docker stop nice_keller
+```
+
+브라우저에서 다음 주소를 새로고침했다.
+
+```text
+http://127.0.0.1:8081
+```
+
+컨테이너가 중지되어 Nginx가 요청에 응답하지 못했고, 브라우저가 계속 접속을 기다리는 현상을 확인했다.
+
+---
+
+## 16. Docker 컨테이너 서비스 복구
+
+중지된 Nginx 컨테이너를 다시 시작했다.
+
+```bash
+sudo docker start nice_keller
+```
+
+브라우저를 다시 새로고침하자 웹페이지가 즉시 정상적으로 표시됐다.
+
+컨테이너 상태도 확인했다.
+
+```bash
+sudo docker ps
+```
+
+다음 상태가 표시되어 정상 실행 중임을 확인했다.
+
+```text
+Up
+```
+
+이번 실습에서 확인한 복구 흐름:
+
+```text
+Docker Nginx 접속 장애
+        ↓
+docker ps로 상태 확인
+        ↓
+docker start로 컨테이너 시작
+        ↓
+브라우저에서 서비스 복구 확인
+```
+
+---
+
+## 17. 컨테이너 자동 재시작 설정
+
+Ubuntu 서버 또는 Docker 서비스가 재시작된 후 컨테이너가 자동으로 다시 실행되도록 재시작 정책을 설정했다.
+
+```bash
+sudo docker update --restart unless-stopped nice_keller
+```
+
+### `unless-stopped` 의미
+
+컨테이너가 오류 또는 서버 재부팅으로 중지되면 Docker가 자동으로 다시 실행한다.
+
+단, 관리자가 직접 `docker stop` 명령어로 컨테이너를 중지한 경우에는 자동으로 시작하지 않는다.
+
+재시작 정책을 확인했다.
+
+```bash
+sudo docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' nice_keller
+```
+
+출력 결과:
+
+```text
+unless-stopped
+```
+
+이를 통해 컨테이너 자동 재시작 정책이 정상적으로 설정된 것을 확인했다.
+
+---
+
+## 18. 직접 설치 방식과 Docker 방식의 차이
+
+| 구분 | Ubuntu 직접 설치 | Docker 컨테이너 |
+|---|---|---|
+| 실행 위치 | Ubuntu 운영체제 | 격리된 컨테이너 |
+| 웹 파일 위치 | `/var/www/html` | `/usr/share/nginx/html` |
+| 서비스 관리 | `systemctl` | `docker` 명령어 |
+| 로그 확인 | `/var/log/nginx` | `docker logs` |
+| 재시작 | `systemctl restart nginx` | `docker restart 컨테이너명` |
+| 삭제 및 재생성 | 패키지와 설정 정리 필요 | 컨테이너 단위로 관리 가능 |
+| 환경 분리 | 운영체제 환경 공유 | 컨테이너별 환경 분리 |
+
+Docker가 항상 더 안전하거나 비용이 더 적게 드는 것은 아니다.
+
+보안과 비용은 이미지 관리, 권한 설정, 네트워크 구성, 자원 사용량 및 운영 방식에 따라 달라진다. Docker의 주요 장점은 서비스 격리, 동일 환경 재현, 배포 및 복구의 편리함이다.
+
+---
+
+## 19. 오늘 배운 내용
+
+- Docker를 이용해 Nginx 컨테이너를 실행할 수 있다.
+- `-p 8080:80`은 호스트의 8080번 포트를 컨테이너의 80번 포트에 연결한다.
+- VirtualBox 포트 포워딩을 추가하면 Windows에서 Docker 서비스에 접속할 수 있다.
+- Ubuntu 직접 설치 Nginx와 Docker Nginx는 서로 독립적인 서비스다.
+- `docker exec -it`로 실행 중인 컨테이너 내부에 접속할 수 있다.
+- 컨테이너에서는 `systemctl`이 없는 경우가 많다.
+- Nginx 컨테이너에서는 `nginx -s reload`를 사용할 수 있다.
+- Docker Nginx의 웹 루트는 `/usr/share/nginx/html`이다.
+- `>`를 사용하면 명령어 출력을 파일에 덮어쓸 수 있다.
+- Docker Nginx 로그는 `stdout`과 `stderr`로 전달된다.
+- `docker logs -f`로 컨테이너 로그를 실시간 확인할 수 있다.
+- `docker stop`과 `docker start`로 장애와 복구를 실습할 수 있다.
+- `unless-stopped` 정책으로 컨테이너 자동 재시작을 설정할 수 있다.
+
+---
+
+## 20. 문제 해결 기록
+
+### 문제 1: Windows에서 Docker Nginx 접속 실패
+
+Ubuntu 서버 내부에서는 다음 명령어가 정상적으로 동작했다.
+
+```bash
+curl localhost:8080
+```
+
+하지만 Windows 브라우저에서는 Docker Nginx에 접속할 수 없었다.
+
+### 원인
+
+VirtualBox에는 기존 Nginx용 포트 포워딩만 있었고, Docker Nginx의 Ubuntu 8080번 포트를 Windows로 전달하는 규칙이 없었다.
+
+### 해결
+
+다음 포트 포워딩 규칙을 추가했다.
+
+```text
+Windows 127.0.0.1:8081
+→ Ubuntu Server:8080
+→ Docker Nginx:80
+```
+
+이후 `http://127.0.0.1:8081` 접속에 성공했다.
+
+---
+
+### 문제 2: vi 편집기 없음
+
+컨테이너 내부에서 다음 명령어를 사용하려 했다.
+
+```bash
+vi /usr/share/nginx/html/index.html
+```
+
+하지만 다음 오류가 발생했다.
+
+```text
+vi: command not found
+```
+
+### 해결
+
+`echo`와 `>`를 이용해 HTML 파일을 수정했다.
+
+```bash
+echo '<h1>Welcome to IDC Lab Day 7</h1>' > /usr/share/nginx/html/index.html
+```
+
+---
+
+### 문제 3: echo 결과만 출력되고 파일이 변경되지 않음
+
+처음에는 다음 명령어만 실행했다.
+
+```bash
+echo '<h1>Welcome to IDC Lab Day 7</h1>'
+```
+
+이 명령어는 문구를 터미널에 출력할 뿐 파일에 저장하지 않는다.
+
+다음과 같이 `>`와 파일 경로를 추가해 해결했다.
+
+```bash
+echo '<h1>Welcome to IDC Lab Day 7</h1>' > /usr/share/nginx/html/index.html
+```
+
+---
+
+### 문제 4: 컨테이너에서 systemctl 사용 불가
+
+컨테이너 내부에서 다음 명령어를 실행했지만 사용할 수 없었다.
+
+```bash
+systemctl reload nginx
+```
+
+### 원인
+
+일반적인 Docker 컨테이너에서는 `systemd`가 PID 1로 실행되지 않으므로 `systemctl`을 사용할 수 없는 경우가 많다.
+
+### 해결
+
+Nginx 자체 명령어를 사용했다.
+
+```bash
+nginx -s reload
+```
+
+---
+
+## 21. 다음 실습 계획
+
+- Docker 컨테이너 데이터 영속성 이해
+- Ubuntu 디렉터리와 컨테이너 웹 디렉터리 연결
+- Docker 볼륨과 바인드 마운트 실습
+- 컨테이너를 삭제하고 다시 생성해 웹페이지 유지 확인
+- 컨테이너 이름을 직접 지정해 관리
+- Docker Compose를 이용한 서비스 구성
+- Prometheus와 Grafana 모니터링 환경 구축
+
+---
+
+
 # Day 5 - Linux 파일 권한 관리 및 Docker 설치
 
 ## 1. 실습 목표
